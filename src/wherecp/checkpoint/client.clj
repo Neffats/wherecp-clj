@@ -2,19 +2,33 @@
   (:gen-class)
   (:require [clj-http.client :as http-client]
             [cheshire.core :as json]
-            [wherecp.models :as models]))
+            [wherecp.models :as models]
+            [wherecp.store :as store])
+  (:use
+   [slingshot.slingshot :only [throw+ try+]]))
 
 (defn get-sid [args]
-  (json/parse-string
-   (:body (http-client/post
+  "Creates a session on the specified Checkpoint SMS.
+  Args: {
+    :ip SMS IP address
+    :
+  }"
+  (:sid (json/parse-string
+   (:body
+    (try+ (http-client/post
            (str "https://" (args :ip) "/web_api/v1.5/login")
            {:content-type :json
             :body
             (json/generate-string
              {:user (args :user)
               :password (args :password)})
-            :insecure? true}))
-   true))
+            :insecure? true})
+          (catch [:status 400] {:keys [body]}
+            (let [parsed-body (json/parse-string body true)]
+            (throw+ {:type ::bad-auth
+                     :message (:message parsed-body)
+                     :code (:code parsed-body)})))))
+   true)))
 
 (defn create-host [sid sms-ip host]
   (http-client/post (str "https://" sms-ip "/web_api/v1.5/add-host")
@@ -33,7 +47,7 @@
                      :insecure? true}))
 
 (defn get-objects
-  [sid sms-ip url]
+  [sid sms-ip url body]
   (loop [offset 0
          total 0
          objects '()]
@@ -42,8 +56,8 @@
                        (str "https://" sms-ip "/web_api/v1.5/" url)
                        {:content-type :json
                         :headers {:x-chkp-sid sid}
-                        :body (json/generate-string {:limit 500
-                                                     :offset offset})
+                        :body (json/generate-string (merge {:limit 500
+                                                     :offset offset} body))
              :insecure? true}))
                true)]
      (if (= (:total resp) (:to resp))
@@ -52,15 +66,19 @@
 
 (defn get-hosts
   [sid sms-ip]
-  (get-objects sid sms-ip "show-hosts"))
+  (get-objects sid sms-ip "show-hosts" {}))
 
 (defn get-networks
   [sid sms-ip]
-  (get-objects sid sms-ip "show-networks"))
-    
+  (get-objects sid sms-ip "show-networks" {}))
+
 (defn get-ranges
   [sid sms-ip]
-  (get-objects sid sms-ip "show-address-ranges"))
+  (get-objects sid sms-ip "show-address-ranges" {}))
+
+(defn get-groups
+  [sid sms-ip]
+  (get-objects sid sms-ip "show-groups" {:details-level "full"}))
 
 (defn parse-hosts [hosts]
   (map #(models/make-host (% :name) (models/convert-ip (% :ipv4-address)) (% :uid)) hosts))
@@ -79,3 +97,15 @@
                              (models/convert-ip (% :ipv4-address-first))
                              (models/convert-ip (% :ipv4-address-last))
                              (% :uid))) ranges))
+
+
+(defn build-skeleton-groups [groups]
+  (map
+   #(models/make-group (:name %)
+                       :network
+                       '()
+                       (:uid %))
+   groups))
+
+(defn populate-groups [groups store]
+  (loop []))

@@ -67,11 +67,11 @@
 (store/insert test-store test-http)
 (store/insert test-store test-tcp-80-90)
 
-(dotimes [n 1000000]
-  (store/insert test-store
-                (models/make-host "host"
-                                  (+ (convert-ip "1.1.1.1") n)
-                                  "test")))
+;;(dotimes [n 1000000]
+;;  (store/insert test-store
+;;                (models/make-host "host"
+;;                                  (+ (convert-ip "1.1.1.1") n)
+;;                                  "test")))
 
 (def test-rule (models/make-rule
                 (models/make-group "src"

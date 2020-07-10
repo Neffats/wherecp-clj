@@ -326,7 +326,7 @@
               svc
               action
               nid)))
-           
+
 (defn in-src [rule]
   (get rule :src))
 
@@ -359,8 +359,8 @@
                     (and
                      (or
                       (< (get curr-this :start) (get curr-that :start))
-                         (= (get curr-this :start) (get curr-that :start)))
-                     (or 
+                      (= (get curr-this :start) (get curr-that :start)))
+                     (or
                       (> (get curr-this :end) (get curr-that :end))
                       (= (get curr-this :end) (get curr-that :end)))))
                   that-common))))
@@ -369,7 +369,7 @@
 (defn is-svc-commonable? [x]
   (or (is-service? x)
       (is-rule? x)))
-   
+
 (defn contains-service?
   [this that]
   (if (and (is-svc-commonable? this) (is-svc-commonable? that))

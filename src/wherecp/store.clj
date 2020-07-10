@@ -3,10 +3,10 @@
 
 (defprotocol Serializable
   (serialize [object]))
-  
+
 (defprotocol De-Serializable
   (de-serialize [object store]))
-  
+
 (defn make-store
   []
   (atom (hash-map)))
@@ -14,7 +14,21 @@
 (defn insert
   [store object]
   (swap! store assoc (keyword (get object :uid)) (serialize object)))
-  
+
+(defn bulk-insert
+  [store objects]
+  (loop [to-add objects]
+    (if (empty? to-add)
+      nil
+      (do
+        (if (not (nil? (first to-add)))
+          (insert store (first to-add)))
+      (recur (rest to-add))))))
+
+(defn update
+  [store object]
+  )
+
 (defn get-by-uid
   [store uid]
   (de-serialize (get @store (keyword uid)) store))
