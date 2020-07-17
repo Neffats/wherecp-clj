@@ -3,32 +3,32 @@
   (:require [clj-http.client :as http-client]
             [cheshire.core :as json]
             [wherecp.models :as models]
-            [wherecp.store :as store])
+            [wherecp.store :as store]
+            [clojure.string :as s])
   (:use
    [slingshot.slingshot :only [throw+ try+]]))
 
-(defn get-sid [args]
-  "Creates a session on the specified Checkpoint SMS.
-  Args: {
-    :ip SMS IP address
-    :
-  }"
-  (:sid (json/parse-string
-   (:body
-    (try+ (http-client/post
-           (str "https://" (args :ip) "/web_api/v1.5/login")
-           {:content-type :json
-            :body
-            (json/generate-string
-             {:user (args :user)
-              :password (args :password)})
-            :insecure? true})
-          (catch [:status 400] {:keys [body]}
-            (let [parsed-body (json/parse-string body true)]
-            (throw+ {:type ::bad-auth
-                     :message (:message parsed-body)
-                     :code (:code parsed-body)})))))
-   true)))
+(defn get-sid [sms-ip creds]
+  "Creates a session on the specified Checkpoint SMS and returns the session id (sid).
+    sms-ip: IP address of the Checkpoint SMS.  
+    creds: {:user :password}"
+  (:sid
+   (json/parse-string
+    (:body
+     (try+ (http-client/post
+            (str "https://" sms-ip "/web_api/v1.5/login")
+            {:content-type :json
+             :body
+             (json/generate-string
+              {:user (creds :user)
+               :password (creds :password)})
+             :insecure? true})
+           (catch [:status 400] {:keys [body]}
+             (let [parsed-body (json/parse-string body true)]
+               (throw+ {:type ::bad-auth
+                        :message (:message parsed-body)
+                        :code (:code parsed-body)})))))
+    true)))
 
 (defn create-host [sid sms-ip host]
   (http-client/post (str "https://" sms-ip "/web_api/v1.5/add-host")
@@ -99,7 +99,7 @@
                              (% :uid))) ranges))
 
 
-(defn build-skeleton-groups [groups]
+(defn parse-network-groups [groups]
   (map
    #(models/make-group (:name %)
                        :network
@@ -108,4 +108,70 @@
    groups))
 
 (defn populate-groups [groups store]
-  (loop []))
+  (store/bulk-insert
+   store
+   (map
+    (fn [group]
+      (loop [current-group (first (store/get-by store #(= (:uid group) (:nid %))))
+             members (:members group)]
+        (if (empty? members)
+          current-group
+        (recur (models/add-group-member
+                current-group
+                (first (store/get-by store #(= (first members) (:nid %)))))
+               (rest members)))))
+    groups)))
+                          
+(defn get-tcp-services
+  [sid sms-ip]
+  (get-objects sid sms-ip "show-services-tcp" {}))
+        
+(defn parse-tcp-services
+  [services]
+  (map #(if (s/includes? (:port %) "-")
+          (let [range (s/split (:port %) #"-")]
+            models/make-service-range
+            (:name %)
+            models/tcp
+            (models/str->int (nth range 0))
+            (models/str->int (nth range 1))
+            (:uid %))
+          (models/make-service
+           (:name %)
+           models/tcp
+           (models/str->int (:port %))
+           (:uid %)))
+          services))
+
+(defn get-udp-services
+  [sid sms-ip]
+  (get-objects sid sms-ip "show-services-udp" {}))
+        
+(defn parse-udp-services
+  [services]
+  (map #(if (s/includes? (:port %) "-")
+          (let [range (s/split (:port %) #"-")]
+            models/make-service-range
+            (:name %)
+            models/udp
+            (models/str->int (nth range 0))
+            (models/str->int (nth range 1))
+            (:uid %))
+          (models/make-service
+           (:name %)
+           models/udp
+           (models/str->int (:port %))
+           (:uid %)))
+          services))
+
+(defn parse-service-groups [groups]
+  (map
+   #(models/make-group (:name %)
+                       :service
+                       '()
+                       (:uid %))
+   groups))
+
+(defn get-rulebase
+  [sid sms-ip rulebase-name]
+  (get-objects sid sms-ip "show-access-rulebase" {:name rulebase-name}))
